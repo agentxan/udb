@@ -38,6 +38,7 @@ class BaseDownloader():
 
         # create a requests session and use across to re-use cookies
         self.req_session = session if session else requests.Session()
+        self.ep_details = ep_details
 
         # set http client usage based on config. As on Feb 21 2025, kisskh works with only http.client
         self.use_http_client = dl_config.get('use_http_client', False)

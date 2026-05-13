@@ -17,6 +17,8 @@ class HLSDownloader(BaseDownloader):
         super().__init__(dl_config, ep_details, session)
         # initialize HLS specific configuration
         self.m3u8_file = os.path.join(f'{self.temp_dir}', 'uwu.m3u8')
+        self.audio_temp_dir = os.path.join(self.temp_dir, 'audio')
+        self.audio_m3u8_file = None
         self.thread_name_prefix = 'udb-hls-'
 
     def _has_uri(self, m3u8_data):
@@ -72,12 +74,21 @@ class HLSDownloader(BaseDownloader):
         except Exception as e:
             return (f'\nERROR: Segment download failed [{segment_file_nm}] due to: {e}', 0)
 
-    def _rewrite_m3u8_file(self, m3u8_data):
-        # regex safe temp dir path
-        seg_temp_dir = self.temp_dir.replace('\\', '\\\\')
-        # ffmpeg doesn't accept backward slash in key file irrespective of platform
-        key_temp_dir = self.temp_dir.replace('\\', '/')
-        with open(self.m3u8_file, 'w', encoding='utf-8') as m3u8_f:
+    def _rewrite_m3u8_file(self, m3u8_data, audio_file=None):
+        if audio_file:
+            # regex safe temp dir path
+            seg_temp_dir = self.audio_temp_dir.replace('\\', '\\\\')
+            # ffmpeg doesn't accept backward slash in key file irrespective of platform
+            key_temp_dir = self.audio_temp_dir.replace('\\', '/')
+            output_file = audio_file
+        else:
+            # regex safe temp dir path
+            seg_temp_dir = self.temp_dir.replace('\\', '\\\\')
+            # ffmpeg doesn't accept backward slash in key file irrespective of platform
+            key_temp_dir = self.temp_dir.replace('\\', '/')
+            output_file = self.m3u8_file
+
+        with open(output_file, 'w', encoding='utf-8') as m3u8_f:
             m3u8_content = re.sub('URI=(.*)/', f'URI="{key_temp_dir}/', m3u8_data, count=1)
             regex_safe = '\\\\' if os.sep == '\\' else '/'
             # strip off url for segments
@@ -93,16 +104,63 @@ class HLSDownloader(BaseDownloader):
         maps = ['-map 0:v -map 0:a'] if self.subtitles else []
         metadata = []
 
+        # Merge separate audio stream if present
+        if hasattr(self, 'audio_m3u8_file') and self.audio_m3u8_file:
+            command.append(f'-extension_picky 0 -loglevel warning -allowed_extensions ALL -i "{self.audio_m3u8_file}"')
+            audio_input_index = len(command) - 1  # 1-based index for ffmpeg
+            # Replace default maps: take video from input 0, audio from the separate audio input
+            maps = [f'-map 0:v', f'-map {audio_input_index}:a']
+
         # Prepare the command if subtitles are present
-        for i, (lang, url) in enumerate(self.subtitles.items(), start=1):
+        sub_start = audio_input_index + 1 if hasattr(self, 'audio_m3u8_file') and self.audio_m3u8_file else 1
+        for sub_idx, (i, (lang, url)) in enumerate(zip(range(sub_start, sub_start + len(self.subtitles)), self.subtitles.items()), start=0):
             command.append(f'-i "{url}"')
             maps.append(f'-map {i}')
-            metadata.append(f'-metadata:s:s:{i-1} title="{lang}"')
+            metadata.append(f'-metadata:s:s:{sub_idx} title="{lang}"')
 
         metadata.append(f'-c:v copy -c:a copy -c:s mov_text -bsf:a aac_adtstoasc "{out_file}"')
 
         cmd = ' '.join(command + maps + metadata)
         self._exec_cmd(cmd)
+
+    def _download_audio_segment(self, ts_url):
+        '''Download a single audio segment to the audio temp directory'''
+        file_nm = ts_url.split('/')[-1]
+        file_path = os.path.join(self.audio_temp_dir, file_nm)
+        if os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
+            return (f'Audio segment file [{file_nm}] already exists. Reusing.', 1)
+        try:
+            with open(file_path, "wb") as f:
+                f.write(self._get_stream_data(ts_url))
+            return (f'Audio segment file [{file_nm}] downloaded', 1)
+        except Exception as e:
+            return (f'\nERROR: Audio segment download failed [{file_nm}] due to: {e}', 0)
+
+    def _download_audio(self, audio_link):
+        '''Download audio segments from a separate audio m3u8 link'''
+        self.logger.debug(f'Downloading audio from separate stream: {audio_link}')
+        audio_m3u8_data = self._get_stream_data(audio_link, True)
+
+        # collect all URIs to download (key + segments + cover art etc.)
+        ts_urls = self._collect_ts_urls(audio_link, audio_m3u8_data)
+        if self._has_uri(audio_m3u8_data):
+            key_uri, _ = self._collect_uri_iv(audio_m3u8_data)
+            if key_uri and key_uri not in ts_urls:
+                ts_urls.append(key_uri)
+
+        # download all audio assets into the audio subdirectory
+        os.makedirs(self.audio_temp_dir, exist_ok=True)
+        metadata = {
+            'type': 'segments',
+            'total': len(ts_urls),
+            'unit': 'seg'
+        }
+        self._multi_threaded_download(self._download_audio_segment, ts_urls, **metadata)
+
+        self.audio_m3u8_file = os.path.join(f'{self.audio_temp_dir}', 'audio_uwu.m3u8')
+        self._rewrite_m3u8_file(audio_m3u8_data, self.audio_m3u8_file)
+
+        return audio_m3u8_data
 
     def start_download(self, m3u8_link):
         # create output directory
@@ -136,6 +194,12 @@ class HLSDownloader(BaseDownloader):
 
         self.logger.debug('Rewrite m3u8 file with downloaded segments paths')
         self._rewrite_m3u8_file(m3u8_data)
+
+        # handle separate audio stream if present
+        audio_link = self.ep_details.get('audioLink')
+        if audio_link:
+            self.logger.debug(f'Separate audio link found: {audio_link}')
+            self._download_audio(audio_link)
 
         if self.subtitles:
             self.logger.debug('Downloading subtitles')
