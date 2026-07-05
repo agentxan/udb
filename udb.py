@@ -158,7 +158,7 @@ def get_ep_range(default_ep_range, mode='Enter', _episodes_predef=None, type='ep
         logger.error('Invalid input! You must specify only one range.')
         return get_ep_range(default_ep_range, mode, _episodes_predef)
 
-    ep_start, ep_end, specific_eps = 0, 0, []
+    ep_start, ep_end, specific_eps = -1, -1, []
     for ep_range in ep_user_input.split(','):
         if '-' in ep_range:                             # process the range if '-' is found
             ep_range = ep_range.split('-')
