@@ -59,7 +59,8 @@ class HLSDownloader(BaseDownloader):
         Returns: (download_status, progress_bar_increment)
         '''
         try:
-            segment_file_nm = ts_url.split('/')[-1]
+            # Strip query parameters to avoid invalid characters in filename
+            segment_file_nm = ts_url.split('/')[-1].split('?')[0]
             segment_file = os.path.join(f"{self.temp_dir}", f"{segment_file_nm}")
 
             # check if the segment is already downloaded
@@ -93,6 +94,8 @@ class HLSDownloader(BaseDownloader):
             regex_safe = '\\\\' if os.sep == '\\' else '/'
             # strip off url for segments
             m3u8_content = re.sub(r'(.*)//(.*)/', '', m3u8_content)
+            # strip query parameters from filenames
+            m3u8_content = re.sub(r'(\.[a-z0-9]+)\?[^"\s\n]*', r'\1', m3u8_content)
             # prefix the downloaded path for segments
             m3u8_content = re.sub(r'^(?!#).+$', rf'{seg_temp_dir}{regex_safe}\g<0>', m3u8_content, flags=re.MULTILINE)
             m3u8_f.write(m3u8_content)
@@ -125,7 +128,8 @@ class HLSDownloader(BaseDownloader):
 
     def _download_audio_segment(self, ts_url):
         '''Download a single audio segment to the audio temp directory'''
-        file_nm = ts_url.split('/')[-1]
+        # Strip query parameters to avoid invalid characters in filename
+        file_nm = ts_url.split('/')[-1].split('?')[0]
         file_path = os.path.join(self.audio_temp_dir, file_nm)
         if os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
             return (f'Audio segment file [{file_nm}] already exists. Reusing.', 1)
