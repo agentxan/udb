@@ -15,6 +15,8 @@ class HLSDownloader(BaseDownloader):
     def __init__(self, dl_config, ep_details, session=None):
         # initialize base downloader
         super().__init__(dl_config, ep_details, session)
+        # Store the dl_config for use in sub-sequent downloads (like audio)
+        self.dl_config = dl_config
         # initialize HLS specific configuration
         self.m3u8_file = os.path.join(f'{self.temp_dir}', 'uwu.m3u8')
         self.thread_name_prefix = 'udb-hls-'
@@ -57,7 +59,9 @@ class HLSDownloader(BaseDownloader):
         Returns: (download_status, progress_bar_increment)
         '''
         try:
-            segment_file_nm = ts_url.split('/')[-1]
+            # some urls have query params, so we need to strip them off to get the filename
+            # NOTE TO FUTURE SELF: This won't work if the same url has different query params. But that is highly unlikely for HLS segments.
+            segment_file_nm = ts_url.split('/')[-1].split('?')[0]
             segment_file = os.path.join(f"{self.temp_dir}", f"{segment_file_nm}")
 
             # check if the segment is already downloaded
@@ -80,24 +84,44 @@ class HLSDownloader(BaseDownloader):
         with open(self.m3u8_file, 'w', encoding='utf-8') as m3u8_f:
             m3u8_content = re.sub('URI=(.*)/', f'URI="{key_temp_dir}/', m3u8_data, count=1)
             regex_safe = '\\\\' if os.sep == '\\' else '/'
-            # strip off url for segments
-            m3u8_content = re.sub(r'(.*)//(.*)/', '', m3u8_content)
-            # prefix the downloaded path for segments
-            m3u8_content = re.sub(r'^(?!#).+$', rf'{seg_temp_dir}{regex_safe}\g<0>', m3u8_content, flags=re.MULTILINE)
+            # replace the segment urls with the downloaded segment file paths
+            m3u8_content = re.sub(
+                r'^(?!#)(.+)$',
+                lambda m: f"{seg_temp_dir}{regex_safe}{os.path.basename(m.group(1).split('?', 1)[0].strip())}",
+                m3u8_content,
+                flags=re.MULTILINE
+            )
             m3u8_f.write(m3u8_content)
 
-    def _convert_to_mp4(self):
+    def _save_as_audio(self):
+        # print(f'Converting {self.out_file} to aac')
+        out_file = os.path.join(f'{self.out_dir}', f'{self.out_file}')
+        # extension_picky 0 -allowed_extensions ALL is used to allow ffmpeg to read all types of files, including .ts files with non-standard extensions like png/jpg
+        cmd = f'ffmpeg -loglevel warning -extension_picky 0 -allowed_extensions ALL -i "{self.m3u8_file}" -map 0:a -c:a copy -bsf:a aac_adtstoasc "{out_file}"'
+        self._exec_cmd(cmd)
+
+    def _save_as_video(self):
         # print(f'Converting {self.out_file} to mp4')
         out_file = os.path.join(f'{self.out_dir}', f'{self.out_file}')
-        command = [f'ffmpeg -extension_picky 0 -loglevel warning -allowed_extensions ALL -i "{self.m3u8_file}"']
-        maps = ['-map 0:v -map 0:a'] if self.subtitles else []
+        # extension_picky 0 -allowed_extensions ALL is used to allow ffmpeg to read all types of files, including .ts files with non-standard extensions like png/jpg
+        command = [f'ffmpeg -loglevel warning -extension_picky 0 -allowed_extensions ALL -i "{self.m3u8_file}"']
+        maps = ['-map 0:v']
         metadata = []
+        stream_idx = 1
+
+        # Add audio input if available, else use the default audio from the m3u8 file
+        if self.audio:
+            command.append(f'-i "{self.audio}"')
+            maps.append('-map 1:a')
+            stream_idx += 1
+        else:
+            maps.append('-map 0:a')
 
         # Prepare the command if subtitles are present
-        for i, (lang, url) in enumerate(self.subtitles.items(), start=1):
+        for i, (lang, url) in enumerate(self.subtitles.items(), start=stream_idx):
             command.append(f'-i "{url}"')
             maps.append(f'-map {i}')
-            metadata.append(f'-metadata:s:s:{i-1} title="{lang}"')
+            metadata.append(f'-metadata:s:s:{i - (2 if self.audio else 1)} title="{lang}"')
 
         metadata.append(f'-c:v copy -c:a copy -c:s mov_text -bsf:a aac_adtstoasc "{out_file}"')
 
@@ -137,12 +161,34 @@ class HLSDownloader(BaseDownloader):
         self.logger.debug('Rewrite m3u8 file with downloaded segments paths')
         self._rewrite_m3u8_file(m3u8_data)
 
+        if self.audio:
+            self.logger.info('Downloading HLS audio stream...')
+            # Audio stream is also HLS, so we can use the a new instance of HLSDownloader to download the audio stream
+            audio_file_name = self.out_file.replace('.mp4', '.aac')
+            audio_full_file_name = os.path.join(f'{self.temp_dir}', f'{audio_file_name}')
+            if os.path.isfile(audio_full_file_name) and os.path.getsize(audio_full_file_name) > 0:
+                self.logger.debug(f'Audio file [{audio_file_name}] already exists. Reusing.')
+            else:
+                dl_config = self.dl_config.copy()  # Create a copy of the dl_config to avoid modifying the original
+                dl_config.update({
+                    'download_dir': self.temp_dir,  # Download audio to the same temp directory as video segments
+                    'temp_download_dir': os.path.join(self.temp_dir, 'audio')
+                })
+                audio_downloader = HLSDownloader(dl_config, {'episodeName': audio_file_name})
+                status = audio_downloader.start_download(self.audio)
+                if status[0] != 0: self.logger.error(f'Failed to download the audio with error: {status[1]}')
+            self.audio = audio_full_file_name
+
         if self.subtitles:
             self.logger.debug('Downloading subtitles')
             self._download_subtitles()
 
-        self.logger.debug('Converting m3u8 segments to .mp4')
-        self._convert_to_mp4()
+        if self.out_file.endswith('.mp4'):
+            self.logger.debug('Converting m3u8 segments to .mp4')
+            self._save_as_video()
+        elif self.out_file.endswith('.aac'):
+            self.logger.debug('Converting m3u8 segments to audio file')
+            self._save_as_audio()
 
         # remove temp dir once completed and dir is empty
         self.logger.debug('Removing temporary directories')

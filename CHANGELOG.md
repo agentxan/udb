@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 2.15.3 [2026-07-05]
+- Fix #92: Handle downloading HLS URLs that include query parameters.
+- Fix #91: Correct episode-selection logic for series that start episode numbering at 0.
+- Fix #90: Ignore invalid subtitle files during final video assembly to prevent save errors.
+- Fix #86: Add support for downloading videos with separate audio streams (separate audio track handling).
+- Add incremental retries for HTTP 429 errors, which may fix #85.
+
 ## Version 2.15.1 [2026-03-06]
 - Akemashita Omedato! HNY 2026!
 - Added check for ffmpeg and minimum version requirement.
