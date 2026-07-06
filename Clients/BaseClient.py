@@ -118,7 +118,7 @@ class BaseClient():
             elif return_type.lower() == 'raw':
                 return response
 
-        elif str(response.status_code).startswith('5'):     # retry if status code is 5xx
+        elif str(response.status_code).startswith('5') or str(response.status_code) in ['429']:     # retry if status code is 5xx or 429 (Too many requests)
             msg = f'Failed with code: {response.status_code}'
             self.logger.warning(msg)
             raise Exception(msg)
@@ -218,11 +218,27 @@ class BaseClient():
 
         _regex_list = lambda data, rgx, grp: [ url.group(grp) for url in re.finditer(rgx, data) ]
         resolutions = _regex_list(master_m3u8_data, r'RESOLUTION=(\d+x\d+)', 1)
-        resolution_names = _regex_list(master_m3u8_data, 'NAME="(.*)"', 1)
+        resolution_links = _regex_list(master_m3u8_data, r'RESOLUTION=(\d+x\d+).*?\n(.*\.m3u8)', 2)
+        try:
+            resolution_names = _regex_list(master_m3u8_data, r'RESOLUTION=(.*),NAME="([0-9a-zA-Z]+)"', 2)
+        except:
+            resolution_names = []
         if len(resolution_names) == 0:
             resolution_names = [ res.lower().split('x')[-1] for res in resolutions ]
-        resolution_links = _regex_list(master_m3u8_data, '(.*)m3u8', 0)
-        self.logger.debug(f'Resolutions data: {resolutions = }, {resolution_names = }, {resolution_links = }')
+
+        # Some HLS have separate audio streams. Extract audio data if available. build audio group -> URI mapping
+        audio_map = { m.group(1): m.group(2) for m in re.finditer(r'GROUP-ID="([^"]+)".*?URI="([^"]+)"', master_m3u8_data) }
+        if audio_map:
+            self.logger.debug(f'Audio streams found. Extracting audio data for each resolution...')
+            # Extract audio group corresponding to each resolution
+            audio_groups = _regex_list(master_m3u8_data, r'RESOLUTION=.*?AUDIO="([^"]+)"', 1)
+            audio_links = [ audio_map.get(group) for group in audio_groups ]
+            self.logger.debug(f'Audio streams data: {audio_map = }, {audio_groups = }, {audio_links = }')
+        else:
+            # No audio streams found. Set audio_links to None for each resolution
+            audio_links = [None] * len(resolution_links)
+
+        self.logger.debug(f'Resolutions data: {resolutions = }, {resolution_names = }, {resolution_links = }, {audio_links = }')
 
         if len(resolution_links) == 0:
             # check for original keyword in the link, or if '#EXT-X-ENDLIST' in m3u8 data
@@ -249,14 +265,16 @@ class BaseClient():
         temp_link = self._normalize_url(resolution_links[0], base_url) if resolution_links else master_m3u8_link
         duration = pretty_time(self._get_video_metadata(temp_link, 'hls', referer)[0])
 
-        for _res, _pixels, _link in zip(resolution_names, resolutions, resolution_links):
+        for _res, _pixels, _link, _audio_link in zip(resolution_names, resolutions, resolution_links, audio_links):
             # prepend base url if it is relative url
             m3u8_link = self._normalize_url(_link, base_url)
+            audio_link = self._normalize_url(_audio_link, base_url) if _audio_link else None
             m3u8_links[_res.replace('p','')] = {
                 'resolution_size': _pixels,
                 'downloadLink': m3u8_link,
                 'downloadType': 'hls',
-                'duration': duration
+                'duration': duration,
+                'audioLink': audio_link
             }
             # get approx download size and add file size if available
             file_size = self._get_download_size(m3u8_link, referer)
@@ -476,7 +494,7 @@ class BaseClient():
                     self.logger.debug(f'Returned {m3u8_links = }')
 
                     if len(m3u8_links) > 0:
-                        self.logger.debug('m3u8 links obtained. No need to try with alternative. Breaking loop')
+                        self.logger.debug('m3u8 links obtained. No need to try with alternative. Breaking loop!')
                         resolution_links.update(m3u8_links)
                         break
 
@@ -560,7 +578,7 @@ class BaseClient():
             elif type(ep) == str and ep.startswith('m'):
                 display_prefix = 'Movie'
                 ep_no = int(ep.replace('m', ''))
-            elif self.udb_episode_dict.get(ep).get('episodeName').endswith('Movie'):
+            elif self.udb_episode_dict.get(ep).get('episodeName').lower().endswith('movie'):
                 display_prefix = 'Movie'
                 ep_no = ep
             else:
@@ -589,6 +607,11 @@ class BaseClient():
 
                     # add download link and it's type against episode
                     self._update_udb_dict(ep, {'episodeName': ep_name, 'downloadLink': ep_link, 'downloadType': link_type})
+
+                    # Check if audio link is available for the selected resolution and add it to the dict
+                    if 'audioLink' in res_dict and res_dict['audioLink']:
+                        self._update_udb_dict(ep, {'audio': res_dict['audioLink']})
+
                     self.logger.debug(f'{info} Link found [{ep_link}]')
                     self._colprint('results', f'{info} Link found [{ep_link}]')
 

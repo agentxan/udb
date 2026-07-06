@@ -13,7 +13,7 @@ class KissKhClient(BaseClient):
     '''
     # step-0
     def __init__(self, config, session=None):
-        self.base_url = config.get('base_url', 'https://kisskh.do/')
+        self.base_url = config.get('base_url', 'https://kisskh.nl/')
         self.search_url = self.base_url + config.get('search_url', 'api/DramaList/Search?q=')
         self.series_url = self.base_url + config.get('series_url', 'api/DramaList/Drama/')
         self.episode_url = self.base_url + config.get('episode_url', 'api/DramaList/Episode/{id}.png?kkey=')
@@ -246,7 +246,7 @@ class KissKhClient(BaseClient):
                 self.logger.debug(f'Fetching resolution streams from the stream link...')
                 try:
                     m3u8_links = self._get_download_links(m3u8_links, self.base_url, self.preferred_urls, self.blacklist_urls)
-                    self.logger.debug(f'Extracted {m3u8_links = }')
+                    # self.logger.debug(f'Extracted {m3u8_links = }')
                 except Exception as e:
                     self.logger.error(f'Failed to extract download links for episode: {episode.get("episode")}. Error: {e}')
                     continue

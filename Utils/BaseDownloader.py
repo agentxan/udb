@@ -32,6 +32,7 @@ class BaseDownloader():
         self.request_timeout = dl_config.get('request_timeout', 30)
         self.series_type = ep_details.get('type', 'series')
         self.subtitles = ep_details.get('subtitles', {})
+        self.audio = ep_details.get('audio')
         # special case for encrypted subtitles in kisskh client
         self.encrypted_subs_details = ep_details.get('encrypted_subs_details', {})
         self.thread_name_prefix = 'udb-mp4-'
@@ -136,14 +137,19 @@ class BaseDownloader():
                 return 'Movie'
 
             ep_no = self.out_file.split()[-3]
+            is_audio = not self.out_file.endswith('.mp4')
 
             try:
-                display_prefix = f'Episode-{int(ep_no):02d}'
-            except ValueError as ve:
-                display_prefix = f'Movie' if ep_no.lower() == 'movie' else f'Episode-{ep_no}'
+                display_prefix = f'{"E" if is_audio else "Episode"}-{int(ep_no):02d}{" Audio" if is_audio else ""}'
+            except ValueError:
+                display_prefix = (
+                    'Audio' if is_audio else 'Movie'
+                ) if ep_no.lower() == 'movie' else (
+                    f'{"E" if is_audio else "Episode"}-{ep_no}{" Audio" if is_audio else ""}'
+                )
 
         except:
-            display_prefix = 'Movie'
+            display_prefix = 'Audio' if is_audio else 'Movie'
 
         return display_prefix
 
@@ -262,6 +268,9 @@ class BaseDownloader():
 
                 if self.encrypted_subs_details.get(sub_name):
                     self._decrypt_subtitle_file(sub_file, **self.encrypted_subs_details[sub_name])
+
+                if os.path.getsize(sub_file) == 0:
+                    raise Exception(f'Subtitle file is empty after download')
 
             except Exception as e:
                 self.logger.warning(f'Failed to download {sub_name} subtitle with error: {e}')
