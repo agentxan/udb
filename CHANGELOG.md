@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 2.15.3 [2026-07-05]
+## Version 2.16.0 [2026-07-06]
 - Fix #92: Handle downloading HLS URLs that include query parameters.
 - Fix #91: Correct episode-selection logic for series that start episode numbering at 0.
 - Fix #90: Ignore invalid subtitle files during final video assembly to prevent save errors.
