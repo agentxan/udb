@@ -51,6 +51,7 @@ class BaseClient():
             f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}{url}" if url.startswith('/') else
             f"{base_url}/{url}"
         )
+        self._fmted_ep_no = lambda x: str(x) if '.' in str(x) else f'{int(x):02d}'
 
     def _update_udb_dict(self, parent_key, child_dict):
         if parent_key in self.udb_episode_dict:

@@ -6,4 +6,4 @@ tqdm
 pycryptodomex
 undetected-chromedriver
 setuptools
-quickjs
+quickjs-ng
