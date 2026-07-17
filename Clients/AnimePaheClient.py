@@ -312,7 +312,7 @@ class AnimePaheClient(BaseClient):
         '''
         return dict containing m3u8 links based on resolution
         '''
-        _get_ep_name = lambda resltn: f"{episode_prefix}{' ' if episode_prefix.lower().endswith('movie') and len(target_links.items()) <= 1 else f' {ep} '}- {resltn}P.mp4"
+        _get_ep_name = lambda resltn: f"{episode_prefix}{' ' if episode_prefix.lower().endswith('movie') and len(target_links.items()) <= 1 else f' {self._fmted_ep_no(ep)} '}- {resltn}P.mp4"
 
         for ep, link in target_links.items():
             error = None

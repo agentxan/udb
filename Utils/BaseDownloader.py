@@ -140,7 +140,10 @@ class BaseDownloader():
             is_audio = not self.out_file.endswith('.mp4')
 
             try:
-                display_prefix = f'{"E" if is_audio else "Episode"}-{int(ep_no):02d}{" Audio" if is_audio else ""}'
+                if 'movie part-' in self.out_file.lower():
+                    display_prefix = f'{"Audio" if is_audio else "Movie"} {ep_no}'
+                else:
+                    display_prefix = f'{"E" if is_audio else "Episode"}-{int(ep_no):02d}{" Audio" if is_audio else ""}'
             except ValueError:
                 display_prefix = (
                     'Audio' if is_audio else 'Movie'

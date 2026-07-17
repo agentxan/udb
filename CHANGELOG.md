@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 2.16.1 [2026-07-13]
+- Enhancement #95: Download episodes/movies with double-digit numbering.
+- Enhancement #94: Update the project from `quickjs` to `quickjs-ng`, which is actively maintained.
+
 ## Version 2.16.0 [2026-07-06]
 - Fix #92: Handle downloading HLS URLs that include query parameters.
 - Fix #91: Correct episode-selection logic for series that start episode numbering at 0.

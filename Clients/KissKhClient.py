@@ -152,7 +152,12 @@ class KissKhClient(BaseClient):
         self.logger.debug(f'Extracting episode details for {target["title"]}')
         for episode in episodes:
             ep_no = int(episode['number']) if str(episode['number']).endswith('.0') else episode['number']
-            ep_name = f"{target['title']} Movie" if target['series_type'].lower() == 'movie' else f"{target['title']} Episode {ep_no}"
+            if target['series_type'].lower() == 'movie' and len(episodes) > 1:
+                ep_name = f"{target['title']} Movie Part-{self._fmted_ep_no(ep_no)}"
+            elif target['series_type'].lower() == 'movie':
+                ep_name = f"{target['title']} Movie"
+            else:
+                ep_name = f"{target['title']} Episode {self._fmted_ep_no(ep_no)}"
             all_episodes_list.append({
                 'episode': ep_no,
                 'episodeName': self._windows_safe_string(ep_name),
