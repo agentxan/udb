@@ -82,9 +82,10 @@ def get_series_type(keys, predefined_input=None):
 
     return types[series_type]
 
-def search_and_select_series(predefined_search_input=None, predefined_year_input=None):
+def search_and_select_series(predefined_search_input=None, predefined_year_input=None, id_search=False):
     while True:
         logger.debug("Search and select series")
+        use_id_search = bool(predefined_search_input) and str(predefined_search_input).strip().isdigit() and 'kisskh' in series_type.lower() and id_search
         # get search keyword from user input
         if predefined_search_input:
             colprint('predefined', f'\nUsing Predefined Input for search: {predefined_search_input}')
@@ -95,7 +96,12 @@ def search_and_select_series(predefined_search_input=None, predefined_year_input
         # search with keyword and show results
         colprint('header', "\nSearch Results:")
         logger.info(f'Searching with keyword: {keyword}')
-        search_results = client.search(keyword)
+
+        if use_id_search:
+            search_results = client.search_by_id(keyword)
+        else:
+            search_results = client.search(keyword)
+
         logger.info('Search Results Found')
         logger.debug(f'Search Results: {search_results}')
 
@@ -110,7 +116,9 @@ def search_and_select_series(predefined_search_input=None, predefined_year_input
 
         # get user selection for the search results
         option = None
-        if predefined_year_input:
+        if use_id_search:
+            option = 1
+        elif predefined_year_input:
             # get key from search_results where year is predefined_year_input
             for idx, result in search_results.items():
                 if str(result['year']) == str(predefined_year_input):
@@ -320,6 +328,7 @@ if __name__ == '__main__':
         parser.add_argument('-s', '--series-type', type=int, help='type of series')
         parser.add_argument('-n', '--series-name', help='name of the series to search')
         parser.add_argument('-y', '--series-year', type=int, help='release year of the series')
+        parser.add_argument('-id', '--series-id', default=False, action='store_true', help='Use series name as id (kisskh only)')
         parser.add_argument('-S', '--seasons', action='append', help='seasons number to download (only applicable for TV Shows)')
         parser.add_argument('-e', '--episodes', action='append', help='episodes number to download')
         parser.add_argument('-r', '--resolution', type=str, help='resolution to download the episodes')
@@ -345,6 +354,7 @@ if __name__ == '__main__':
         series_type_predef = args.series_type
         series_name_predef = args.series_name
         series_year_predef = args.series_year
+        series_name_as_id = args.series_id
         seasons_predef = '-'.join(args.seasons) if args.seasons else None
         episodes_predef = '-'.join(args.episodes) if args.episodes else None
         resolution_predef = args.resolution
@@ -437,7 +447,7 @@ if __name__ == '__main__':
         check_if_exists(downloader_config['download_dir'])
 
         # search in an infinite loop till you get your series
-        target_series = search_and_select_series(series_name_predef, series_year_predef)
+        target_series = search_and_select_series(series_name_predef, series_year_predef, series_name_as_id)
         logger.info(f'Selected series: {target_series}')
 
         # fetch episode links

@@ -141,6 +141,47 @@ class KissKhClient(BaseClient):
 
         return search_results
 
+    def search_by_id(self, kisskh_id):
+        '''
+        search for drama based on a id
+        '''
+        idx = 1
+        search_results = {}
+
+        series_id = kisskh_id
+        self.logger.debug(f'Fetching additional details for series_id: {series_id}')
+        series_data = self._send_request(self.series_url + str(series_id), return_type='json')
+        if not series_data or not isinstance(series_data, dict):
+            self.logger.error(f'Failed to fetch series data for series_id: {series_id}')
+            return search_results
+        try:
+            item = {
+                'title': series_data.get('title', 'Unknown'),
+                'series_id': series_id,
+                'country': series_data.get('country', 'Unknown'),
+                'episodesCount': series_data.get('episodesCount', 0),
+                'series_type': series_data.get('type', 'Unknown'),
+                'status': series_data.get('status', 'Unknown'),
+                'episodes': series_data.get('episodes', [])
+            }
+            try:
+                if series_data.get('releaseDate'):
+                    item['year'] = str(series_data['releaseDate']).split('-')[0]
+                else:
+                    item['year'] = 'XXXX'
+            except Exception:
+                item['year'] = 'XXXX'
+
+            # Add index to every search result
+            search_results[idx] = item
+            self._show_search_results(idx, item)
+            idx += 1
+        except Exception as e:
+            self.logger.error(f'Error parsing series data: {e}')
+            return search_results
+
+        return search_results
+
     # step-2
     def fetch_episodes_list(self, target):
         '''
